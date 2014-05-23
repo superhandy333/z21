@@ -2,7 +2,7 @@
  * Steuerzentrale Z21 oder z21 von Fleischmann/Roco
  * ---------------------------------------------------------------------------
  * Datei:     z21.cs
- * Version:   24.04.2014
+ * Version:   23.05.2014
  * Besitzer:  Mathias Rentsch (rentsch@online.de)
  * Lizenz:    GPL
  *
@@ -50,7 +50,7 @@ namespace LokPower
             XBusVersion = xBusVersion;
             Version = version;
         }
-    }
+    } 
 
     public class FirmwareVersionInfo
     {
@@ -71,16 +71,6 @@ namespace LokPower
         public bool Besetzt;
         public RichtungsAngabe Richtung;
         public byte Fahrstufe;
-        /*public string ToString()             // irgendwas faul mit dem Teil
-        {
-            string s = "";
-            s = "Adresse:" + Adresse.ToString()+", ";
-            s += "FS:" + Fahrstufe.ToString() + ", ";
-            s += "Ri:" + Richtung.ToString() + ", ";
-            s += "B:" + Besetzt.ToString();
-            return s;
-        }
-         */
     }
 
     public class CentralStateData
@@ -168,10 +158,7 @@ namespace LokPower
                 byte[] received = EndReceive(res, ref RemoteIpEndPoint);
                 BeginReceive(new AsyncCallback(empfang), null);
                 if (OnReceive != null) OnReceive(this, new DataEventArgs(received));
-                //Console.WriteLine("> " + getByteString(received));
                 cutTelegramm(received);
-
-                //evaluation(received);  // Original
             }
             catch (Exception e1)
             {
@@ -726,5 +713,88 @@ namespace LokPower
             Data = data;
         }
         public FirmwareVersionInfo Data;
+    }
+
+    public class LokAdresse
+    {
+        public LokAdresse()
+        {
+        }
+
+        public LokAdresse(int adresse)
+        {
+            Value = adresse;
+        }
+
+        public LokAdresse(ValueBytesStruct valueBytes)
+        {
+            ValueBytes = valueBytes;
+        }
+
+        private int val = 0;
+        public int Value
+        {
+            set
+            {
+                if ((value >= 1) & (value <= 9999))
+                {
+                    val = value;
+                }
+                else
+                {
+                    val = -99;
+                }
+            }
+            get
+            {
+                return val;
+            }
+        }
+
+        public ValueBytesStruct ValueBytes
+        {
+            set
+            {
+                Value = ((value.Adr_MSB & 0x3F) << 8) + value.Adr_LSB;
+            }
+            get
+            {
+                ValueBytesStruct vbs;
+
+                try
+                {
+                    byte b = Convert.ToByte(val >> 8);
+                    if (val >= 128)
+                    {
+                        b += 192;
+                    }
+                    vbs.Adr_MSB = b;
+                    vbs.Adr_LSB = Convert.ToByte(val % 256);
+
+                }
+                catch
+                {
+                    vbs.Adr_MSB = 0;
+                    vbs.Adr_LSB = 0;
+
+                }
+                return vbs;
+            }
+        }
+
+        public override string ToString()
+        {
+            return Value.ToString();
+
+        }
+
+    }
+
+    public enum RichtungsAngabe { Leerlauf, Forward, Backward };
+
+    public struct ValueBytesStruct
+    {
+        public byte Adr_MSB;
+        public byte Adr_LSB;
     }
 }
