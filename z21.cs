@@ -2,7 +2,7 @@
  * Steuerzentrale Z21 oder z21 von Fleischmann/Roco
  * ---------------------------------------------------------------------------
  * Datei:     z21.cs
- * Version:   23.05.2014
+ * Version:   16.06.2014
  * Besitzer:  Mathias Rentsch (rentsch@online.de)
  * Lizenz:    GPL
  *
@@ -11,7 +11,7 @@
  * unter http://www.gnu.org/licenses/gpl.html.
  * 
  */
-
+                 
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -160,9 +160,9 @@ namespace LokPower
                 if (OnReceive != null) OnReceive(this, new DataEventArgs(received));
                 cutTelegramm(received);
             }
-            catch (Exception e1)
+            catch (Exception ex)
             {
-                Console.WriteLine("Fehler beim Empfang  " + e1.Message);
+                Console.WriteLine("Fehler beim Empfang  " + ex.Message);
             }
          }
 
@@ -303,7 +303,7 @@ namespace LokPower
                             infodata.Fahrstufe = (byte)(received[8] & 0x7F);
                             b = ((received[8] & 0x80) == 0x80);
                             if (b) infodata.Richtung = RichtungsAngabe.Forward; else infodata.Richtung = RichtungsAngabe.Backward;
-                            Console.WriteLine("> LAN X LOCO INFO " + getByteString(received) + " (" + infodata.Adresse+" - "+infodata.Fahrstufe.ToString() + ")");
+                            Console.WriteLine("> LAN X LOCO INFO " + getByteString(received) + " (#" + infodata.Adresse+" - "+infodata.Fahrstufe.ToString() + ")");
                             if (OnGetLocoInfo != null) OnGetLocoInfo(this, new GetLocoInfoEventArgs(infodata));
                             
                             break;
@@ -380,7 +380,7 @@ namespace LokPower
             Senden(bytes);
         }
 
-        //  LAN_X_GET_VERSION     // 2.3 (xx)
+        //  LAN_X_GET_VERSION     // 2.3 (10)
         public void GetVersion()
         {
             byte[] bytes = new byte[7];
@@ -390,7 +390,8 @@ namespace LokPower
             bytes[3] = 0;
             bytes[4] = 0x21;
             bytes[5] = 0x21;
-            bytes[6] = 0x47;   // = XOR-Byte  selbst ausgerechnet, in der LAN-Doku steht 0 ?!
+            //bytes[6] = 0x47;   // = XOR-Byte  selbst ausgerechnet, in der LAN-Doku steht 0 ?!
+            bytes[6] = 0;
             Console.WriteLine("LAN X GET VERSION " + getByteString(bytes));
             Senden(bytes);
         }
@@ -522,7 +523,7 @@ namespace LokPower
             bytes[6] = adresse.ValueBytes.Adr_MSB;
             bytes[7] = adresse.ValueBytes.Adr_LSB;
             bytes[8] = (byte)(bytes[4] ^ bytes[5] ^ bytes[6] ^ bytes[7]);
-            Console.WriteLine("LAN X GET LOCO INFO " + getByteString(bytes));
+            Console.WriteLine("LAN X GET LOCO INFO " + getByteString(bytes)+" (#"+adresse.Value.ToString()+")");
             Senden(bytes);
         }
 
@@ -560,7 +561,7 @@ namespace LokPower
             bytes[1] = 0;
             bytes[2] = 0x30;
             bytes[3] = 0;
-            Console.WriteLine("LAN LOGOFF ");
+            Console.WriteLine("LAN LOGOFF " + getByteString(bytes));
             Senden(bytes);
             
         }
@@ -620,7 +621,7 @@ namespace LokPower
 
         public void Dispose()
         {
-            LogOFF();
+            //LogOFF();
             Close();
         }
     }
