@@ -2,7 +2,8 @@
  * Steuerzentrale Z21 oder z21 von Fleischmann/Roco
  * ---------------------------------------------------------------------------
  * Datei:     z21.cs
- * Version:   16.06.2014
+ * Version:   16.06.2014 - Neu
+ * Version:   20.08.2023 - Umstellung UdpClient 
  * Besitzer:  Mathias Rentsch (rentsch@online.de)
  * Lizenz:    GPL
  *
@@ -20,9 +21,9 @@ using System.Text;
 
 namespace LokPower
 {
-    public struct Z21StartData
+    public class Z21StartData
     {
-        public string LanAdresse;
+        public string LanAdresse = string.Empty;
         public int LanPort;
     }
 
@@ -71,6 +72,10 @@ namespace LokPower
         public bool Besetzt;
         public RichtungsAngabe Richtung;
         public byte Fahrstufe;
+        public LokInfoData()
+        {
+            Adresse = new LokAdresse();
+        }
     }
 
     public class CentralStateData
@@ -100,17 +105,19 @@ namespace LokPower
         }
     }
 
-    public class Z21 : UdpClient
+    public class Z21
     {
-        public Z21(Z21StartData startData) : base(startData.LanPort)
+        private readonly UdpClient udpClient;
+        public Z21(Z21StartData startData)
         {
+            udpClient = new UdpClient(startData.LanPort);
             lanAdresse = IPAddress.Parse(startData.LanAdresse);
             lanAdresseS = startData.LanAdresse;
             lanPort = startData.LanPort;
-            Connect(lanAdresse, lanPort);     
-            DontFragment = false;
-            EnableBroadcast = false;
-            BeginReceive(new AsyncCallback(empfang), null);
+            udpClient.Connect(lanAdresse, lanPort);
+            udpClient.DontFragment = false;
+            udpClient.EnableBroadcast = false;
+            udpClient.BeginReceive(new AsyncCallback(empfang), null);
             Console.WriteLine("Z21 initialisiert.");
         }
 
@@ -155,8 +162,8 @@ namespace LokPower
             try
             {
                 IPEndPoint RemoteIpEndPoint = null;
-                byte[] received = EndReceive(res, ref RemoteIpEndPoint);
-                BeginReceive(new AsyncCallback(empfang), null);
+                byte[] received = udpClient.EndReceive(res, ref RemoteIpEndPoint);
+                udpClient.BeginReceive(new AsyncCallback(empfang), null);
                 if (OnReceive != null) OnReceive(this, new DataEventArgs(received));
                 cutTelegramm(received);
             }
@@ -164,12 +171,12 @@ namespace LokPower
             {
                 Console.WriteLine("Fehler beim Empfang  " + ex.Message);
             }
-         }
+        }
 
         private void endConnect(IAsyncResult res)
         {
             Console.WriteLine("Reconnection abgeschlossen");
-            Client.EndConnect(res);
+            udpClient.Client.EndConnect(res);
         }
 
         private void cutTelegramm(byte[] bytes)
@@ -513,38 +520,66 @@ namespace LokPower
         //  LAN X GET LOCO INFO         // 4.1 (20)
         public void GetLocoInfo(LokAdresse adresse)   
         {
-            byte[] bytes = new byte[9];
-            bytes[0] = 0x09;
-            bytes[1] = 0;
-            bytes[2] = 0x40;
-            bytes[3] = 0;
-            bytes[4] = 0xE3;
-            bytes[5] = 0xF0; 
-            bytes[6] = adresse.ValueBytes.Adr_MSB;
-            bytes[7] = adresse.ValueBytes.Adr_LSB;
-            bytes[8] = (byte)(bytes[4] ^ bytes[5] ^ bytes[6] ^ bytes[7]);
-            Console.WriteLine("LAN X GET LOCO INFO " + getByteString(bytes)+" (#"+adresse.Value.ToString()+")");
-            Senden(bytes);
+            if (adresse != null)
+            {
+                if (adresse.Value != 0)    // Adresse außerhalb des Wertebereiches bedeutet value=0
+                {
+                    byte[] bytes = new byte[9];
+                    bytes[0] = 0x09;
+                    bytes[1] = 0;
+                    bytes[2] = 0x40;
+                    bytes[3] = 0;
+                    bytes[4] = 0xE3;
+                    bytes[5] = 0xF0;
+                    bytes[6] = adresse.ValueBytes.Adr_MSB;
+                    bytes[7] = adresse.ValueBytes.Adr_LSB;
+                    bytes[8] = (byte)(bytes[4] ^ bytes[5] ^ bytes[6] ^ bytes[7]);
+                    Console.WriteLine("LAN X GET LOCO INFO " + getByteString(bytes) + " (#" + adresse.Value.ToString() + ")");
+                    Senden(bytes);
+                }
+                else
+                {
+                    Console.WriteLine("GetLocoInfo: Ungültige LokAdresse (außerhalb Wertebereich)");
+                }
+            }
+            else
+            {
+                Console.WriteLine("GetLocoInfo: Ungültige LokAdresse (null)");
+            }
         }
 
         //  LAN_X_SET_LOCO_DRIVE  4.2  (21)
         public void SetLocoDrive(LokInfoData data)
         {
-            if (data.Richtung==RichtungsAngabe.Forward) data.Fahrstufe |= 0x080;
+            if (data != null)
+            {
+                if (data.Adresse != null)
+                {
+                    if (data.Richtung == RichtungsAngabe.Forward) data.Fahrstufe |= 0x080;
 
-            byte[] bytes = new byte[10];
-            bytes[0] = 0x0A;
-            bytes[1] = 0;
-            bytes[2] = 0x40;
-            bytes[3] = 0;
-            bytes[4] = 0xE4;
-            bytes[5] = 0x13; //  = 128 Fahrstufen
-            bytes[6] = data.Adresse.ValueBytes.Adr_MSB;
-            bytes[7] = data.Adresse.ValueBytes.Adr_LSB;
-            bytes[8] = data.Fahrstufe;
-            bytes[9] = (byte)(bytes[4] ^ bytes[5] ^ bytes[6] ^ bytes[7] ^ bytes[8]);
-            Console.WriteLine("LAN X SET LOCO DRIVE " + getByteString(bytes) + "  (" + data.Adresse+" - "+ data.Fahrstufe.ToString() + ")");
-            Senden(bytes);
+                    byte[] bytes = new byte[10];
+                    bytes[0] = 0x0A;
+                    bytes[1] = 0;
+                    bytes[2] = 0x40;
+                    bytes[3] = 0;
+                    bytes[4] = 0xE4;
+                    bytes[5] = 0x13; //  = 128 Fahrstufen
+                    bytes[6] = data.Adresse.ValueBytes.Adr_MSB;
+                    bytes[7] = data.Adresse.ValueBytes.Adr_LSB;
+                    bytes[8] = data.Fahrstufe;
+                    bytes[9] = (byte)(bytes[4] ^ bytes[5] ^ bytes[6] ^ bytes[7] ^ bytes[8]);
+                    Console.WriteLine("LAN X SET LOCO DRIVE " + getByteString(bytes) + "  (" + data.Adresse + " - " + data.Fahrstufe.ToString() + ")");
+                    Senden(bytes);
+                }
+                else
+                {
+                    Console.WriteLine("SetLocoDrive: Ungültige LokAdresse (null)");
+                }
+            }
+            else
+            {
+                Console.WriteLine("SetLocoDrive: Ungültige LokInfoData (null)");
+            }
         }
 
 
@@ -580,7 +615,7 @@ namespace LokPower
         {
             try
             {
-                Send(bytes, bytes.GetLength(0));
+                udpClient.Send(bytes, bytes.GetLength(0));
             }
             catch (ArgumentNullException e)
             {
@@ -601,7 +636,7 @@ namespace LokPower
             {
                 Console.WriteLine("Fehler beim Senden. Socket-Exception.");
                 Console.WriteLine("Versuche es erneut.");
-                Client.BeginConnect(lanAdresse, lanPort, new AsyncCallback(endConnect), null);
+                udpClient.Client.BeginConnect(lanAdresse, lanPort, new AsyncCallback(endConnect), null);
                 Console.WriteLine(e.Message);
                 
             }
@@ -611,7 +646,7 @@ namespace LokPower
         {
             try
             {
-                Client.BeginConnect(lanAdresse, lanPort, new AsyncCallback(endConnect), null);     
+                udpClient.Client.BeginConnect(lanAdresse, lanPort, new AsyncCallback(endConnect), null);     
             }
             catch
             {
@@ -622,7 +657,7 @@ namespace LokPower
         public void Dispose()
         {
             //LogOFF();
-            Close();
+            udpClient.Close();
         }
     }
 
@@ -743,7 +778,7 @@ namespace LokPower
                 }
                 else
                 {
-                    val = -99;
+                    val = 0;
                 }
             }
             get
