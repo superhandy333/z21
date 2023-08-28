@@ -2,8 +2,9 @@
  * Steuerzentrale Z21 oder z21 von Fleischmann/Roco
  * ---------------------------------------------------------------------------
  * Datei:     z21.cs
- * Version:   16.06.2014 - Neu
- * Version:   20.08.2023 - Umstellung UdpClient 
+ * Version:   16.06.2014 - Neu (Protokollversion 1.03)
+ * Version:   20.08.2023 - Umstellung UdpClient
+ * Version:   27.08.2023 - Protokollversion 1.12
  * Besitzer:  Mathias Rentsch (rentsch@online.de)
  * Lizenz:    GPL
  *
@@ -27,13 +28,27 @@ namespace LokPower
         public int LanPort;
     }
 
-    public enum HardwareTyp { Z21_OLD, Z21_NEW, SMARTRAIL, z21_SMALL, None};
+    public enum HardwareTyp
+    { 
+        Z21_OLD,
+        Z21_NEW,
+        SMARTRAIL,
+        z21_SMALL,
+        z21_START,
+        SINGLE_BOOSTER,
+        DUAL_BOOSTER,
+        Z21_XL,
+        XL_BOOSTER,
+        Z21_SWITCH_DECODER,
+        Z21_SIGNAL_DECODER,
+        None
+    };
 
     public class HardwareInfo
     {
         public HardwareTyp Hardware;
-        public int FirmwareVersion;
-        public HardwareInfo(HardwareTyp hardware, int firmware)
+        public FirmwareVersionInfo FirmwareVersion;
+        public HardwareInfo(HardwareTyp hardware, FirmwareVersionInfo firmware)
         {
             Hardware = hardware;
             FirmwareVersion = firmware; 
@@ -44,12 +59,14 @@ namespace LokPower
 
     public class VersionInfo
     {
-        public int XBusVersion;
+        public int XBusVersion;     // XBUS_VER
         public VersionTyp Version;
-        public VersionInfo(int xBusVersion, VersionTyp version)
+        public int CMDST_ID;        // CMDST_ID
+        public VersionInfo(int xBusVersion, VersionTyp version,int cmdst_id)
         {
             XBusVersion = xBusVersion;
             Version = version;
+            CMDST_ID = cmdst_id;
         }
     } 
 
@@ -57,12 +74,14 @@ namespace LokPower
     {
         public int Major;
         public int Minor;
-        public string Firmware;
         public FirmwareVersionInfo(int major, int minor)
         {
             Major = major;
             Minor = minor;
-            Firmware = major.ToString("X")+"."+minor.ToString("X");    // z21 liefert minor hex
+        }
+        public new string ToString()
+        {
+            return Major.ToString("X")+"."+Minor.ToString("X");    // z21 liefert minor hex
         }
     }
 
@@ -84,6 +103,10 @@ namespace LokPower
         public bool TrackVoltageOff = true;
         public bool ShortCircuit = true;
         public bool ProgrammingModeActive = true;
+    }
+
+    public class CentralStateDataEx
+    {
         public bool HighTemperature = true;
         public bool PowerLost = true;
         public bool ShortCircuitExternal = true;
@@ -99,9 +122,11 @@ namespace LokPower
         public int SupplyVoltage = -1;
         public int VCCVoltage = -1;
         public CentralStateData CentralState;
+        public CentralStateDataEx CentralStateEx;
         public SystemStateData()
         {
             CentralState = new CentralStateData();
+            CentralStateEx = new CentralStateDataEx();
         }
     }
 
@@ -151,8 +176,8 @@ namespace LokPower
         public event EventHandler<StateEventArgs> OnStatusChanged;                  //  40 62 LAN X STATUS CHANGED 2.12 (13)
         public event EventHandler OnStopped;                                        //  40 81 LAN X BC STOPPED 2.14 (14)
         public event EventHandler<FirmwareVersionInfoEventArgs> OnGetFirmwareVersion;// 40 F3 LAN X GET FIRMWARE VERSION 2.15 (xx)
-        public event EventHandler<SystemStateEventArgs> OnSystemStateDataChanged;   //  84    LAN SYSTEMSTATE_DATACHANGED 2.18 (16) 
-        public event EventHandler<HardwareInfoEventArgs> OnGetHardwareInfo;         //  1A    LAN GET HWINFO
+        public event EventHandler<SystemStateEventArgs> OnSystemStateDataChanged;   //  84    LAN SYSTEMSTATE_DATACHANGED 2.18 (18)
+        public event EventHandler<HardwareInfoEventArgs> OnGetHardwareInfo;         //  1A    LAN GET HWINFO 2.20 (19)
         public event EventHandler<GetLocoInfoEventArgs> OnGetLocoInfo;              //  40 EF LAN X LOCO INFO   4.4 (22)
         public event EventHandler<TrackPowerEventArgs> OnTrackPower;                //  ist Zusammenfassung von 
         
@@ -207,24 +232,31 @@ namespace LokPower
         private void evaluation(byte[] received)
         {
             bool b;
-            int i,j;
+            int i;
 
             switch (received[2])
             {
-                case 0x1A:           //  LAN GET HWINFO  2.2 (xx)
+                case 0x1A:           //  LAN GET HWINFO  2.20 (19)
                     Console.WriteLine("> LAN GET HWINFO " + getByteString(received));
                     HardwareTyp hardwareTyp;
                     i = (received[7] << 24) + (received[6] << 16) + (received[5] << 8) + (received[4]);
-                    j = (received[11] << 24) + (received[10] << 16) + (received[9] << 8) + (received[8]);
                     switch (i)
                     {
                         case 0x00000200: hardwareTyp = HardwareTyp.Z21_OLD; break;
                         case 0x00000201: hardwareTyp = HardwareTyp.Z21_NEW; break;
                         case 0x00000202: hardwareTyp = HardwareTyp.SMARTRAIL; break;
                         case 0x00000203: hardwareTyp = HardwareTyp.z21_SMALL; break;
+                        case 0x00000204: hardwareTyp = HardwareTyp.z21_START; break;
+                        case 0x00000205: hardwareTyp = HardwareTyp.SINGLE_BOOSTER; break;
+                        case 0x00000206: hardwareTyp = HardwareTyp.DUAL_BOOSTER; break;
+                        case 0x00000211: hardwareTyp = HardwareTyp.Z21_XL; break;
+                        case 0x00000212: hardwareTyp = HardwareTyp.XL_BOOSTER; break;
+                        case 0x00000301: hardwareTyp = HardwareTyp.Z21_SWITCH_DECODER; break;
+                        case 0x00000302: hardwareTyp = HardwareTyp.Z21_SIGNAL_DECODER; break;
                         default: hardwareTyp = HardwareTyp.None; break;
                     }
-                    if (OnGetHardwareInfo != null) OnGetHardwareInfo(this, new HardwareInfoEventArgs(new HardwareInfo(hardwareTyp, j)));
+                    FirmwareVersionInfo firmware = new(received[9],received[8]);
+                    if (OnGetHardwareInfo != null) OnGetHardwareInfo(this, new HardwareInfoEventArgs(new HardwareInfo(hardwareTyp, firmware)));
                     break;
                 case 0x10:           //  LAN GET SERIAL NUMBER  2.1 (10)
                     Console.WriteLine("> LAN GET SERIAL NUMBER " + getByteString(received));
@@ -287,7 +319,7 @@ namespace LokPower
                                             versionTyp = VersionTyp.Other;
                                             break;
                                     }
-                                    if (OnGetVersion != null) OnGetVersion(this, new VersionInfoEventArgs(new VersionInfo(received[6], versionTyp)));
+                                    if (OnGetVersion != null) OnGetVersion(this, new VersionInfoEventArgs(new VersionInfo(received[6], versionTyp,received[7])));
                                     break;
                                 default:
                                     Console.WriteLine("> Unbekanntes X-Bus-Telegramm Header 63" + getByteString(received));
@@ -347,31 +379,36 @@ namespace LokPower
 
         private CentralStateData getCentralStateData(byte[] received)
         {
-            CentralStateData statedata = new CentralStateData();
-            statedata.EmergencyStop = ((received[6] & 0x01) == 0x01);
-            statedata.TrackVoltageOff = ((received[6] & 0x02) == 0x02);
-            statedata.ShortCircuit = ((received[6] & 0x04) == 0x04);
-            statedata.ProgrammingModeActive = ((received[6] & 0x20) == 0x20);
+            CentralStateData statedata = new()
+            {
+                EmergencyStop = ((received[6] & 0x01) == 0x01),
+                TrackVoltageOff = ((received[6] & 0x02) == 0x02),
+                ShortCircuit = ((received[6] & 0x04) == 0x04),
+                ProgrammingModeActive = ((received[6] & 0x20) == 0x20)
+            };
             return statedata;
         }
 
         private SystemStateData getSystemStateData(byte[] received)
         {
-            SystemStateData statedata = new SystemStateData();
-            statedata.MainCurrent = (received[4] << 8) + (received[5]);
-            statedata.ProgCurrent = (received[6] << 8) + (received[7]);
-            statedata.FilteredMainCurrent = (received[8] << 8) + (received[9]);
-            statedata.Temperature = (received[10] << 8) + (received[11]);
-            statedata.SupplyVoltage = (received[12] << 8) + (received[13]);
-            statedata.VCCVoltage = (received[14] << 8) + (received[15]);
+            SystemStateData statedata = new()
+            {
+                MainCurrent = (received[5] << 8) + (received[4]),
+                ProgCurrent = (received[7] << 8) + (received[6]),
+                FilteredMainCurrent = (received[9] << 8) + (received[8]),
+                Temperature = (received[11] << 8) + (received[10]),
+                SupplyVoltage = (received[13] << 8) + (received[12]),
+                VCCVoltage = (received[15] << 8) + (received[14])
+            };
             statedata.CentralState.EmergencyStop = ((received[16] & 0x01) == 0x01);
             statedata.CentralState.TrackVoltageOff = ((received[16] & 0x02) == 0x02);
             statedata.CentralState.ShortCircuit = ((received[16] & 0x04) == 0x04);
             statedata.CentralState.ProgrammingModeActive = ((received[16] & 0x20) == 0x20);
-            statedata.CentralState.HighTemperature = ((received[17] & 0x01) == 0x01);
-            statedata.CentralState.PowerLost = ((received[17] & 0x02) == 0x02);
-            statedata.CentralState.ShortCircuitExternal = ((received[17] & 0x04) == 0x04);
-            statedata.CentralState.ShortCircuitInternal = ((received[17] & 0x08) == 0x08);
+
+            statedata.CentralStateEx.HighTemperature = ((received[17] & 0x01) == 0x01);
+            statedata.CentralStateEx.PowerLost = ((received[17] & 0x02) == 0x02);
+            statedata.CentralStateEx.ShortCircuitExternal = ((received[17] & 0x04) == 0x04);
+            statedata.CentralStateEx.ShortCircuitInternal = ((received[17] & 0x08) == 0x08);
             return statedata;
         }
  
@@ -397,7 +434,6 @@ namespace LokPower
             bytes[3] = 0;
             bytes[4] = 0x21;
             bytes[5] = 0x21;
-            //bytes[6] = 0x47;   // = XOR-Byte  selbst ausgerechnet, in der LAN-Doku steht 0 ?!
             bytes[6] = 0;
             Console.WriteLine("LAN X GET VERSION " + getByteString(bytes));
             Senden(bytes);
@@ -485,15 +521,15 @@ namespace LokPower
             bytes[1] = 0;
             bytes[2] = 0x50;
             bytes[3] = 0;
-            bytes[4] = 1;         //  0x0000001   (Byte 4+5) 
-            bytes[5] = 0;         //  0x0000100   (Byte 4+5) 
+            bytes[4] = 1;         //  0x0000001 Broadcast für Fahren/Schalten 
+            bytes[5] = 1;         //  0x0000100 Broadcast für LAN_SYSTEMSTATE_DATACHANGED
             bytes[6] = 0;
             bytes[7] = 0;
             Console.WriteLine("LAN SET BROADCASTFLAGS " + getByteString(bytes));
             Senden(bytes);
         }
 
-        //  LAN_SYSTEMSTATE_GETDATA()     // 2.19 (17)
+        //  LAN_SYSTEMSTATE_GETDATA()     // 2.19 (19)
         public void SystemStateGetData()
         {
             byte[] bytes = new byte[4];
@@ -648,9 +684,9 @@ namespace LokPower
             {
                 udpClient.Client.BeginConnect(lanAdresse, lanPort, new AsyncCallback(endConnect), null);     
             }
-            catch
+            catch (Exception ex)
             {
-                Console.WriteLine("Fehler beim Reconnection.");   
+                Console.WriteLine("Fehler beim Reconnection. "+ex.Message);   
             }
         }
 
